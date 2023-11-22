@@ -2,81 +2,100 @@ package main
 
 import (
 	"fmt"
-	// Uncomment this block to pass the first stage
 	"net"
+	"encoding/binary"
 )
 
+type DNSHeader struct {
+	ID      uint16
+	QR      bool
+	OPCODE	uint8
+	AA      bool
+	TC      bool
+	RD      bool
+	RA      bool
+	Z       uint8
+	RCODE   uint8
+	QDCount uint16
+	ANCount uint16
+	NSCount uint16
+	ARCount uint16
+}
+
+// Packs the header into a uint16 values
+func (h *DNSHeader) packHeader() uint16 {
+	var header uint16 = 0
+	if h.QR { header += 1 << 15 }
+	header |= uint16(h.OPCODE) << 11
+	if h.AA { header += 1 << 10 }
+	if h.TC { header += 1 << 9 }
+	if h.RD { header += 1 << 8 }
+	if h.RA { header += 1 << 7 }
+	header |= uint16(h.Z) << 6
+	header |= uint16(h.RCODE)
+	return header
+}
+
+// Encodes the header into a byte array
+func (h *DNSHeader) encodeDNSHeader() []byte {
+	buffer := make([]byte, 12)
+
+	binary.BigEndian.PutUint16(buffer[0:], h.ID)
+	binary.BigEndian.PutUint16(buffer[2:], h.packHeader())
+	binary.BigEndian.PutUint16(buffer[4:], h.QDCount)
+	binary.BigEndian.PutUint16(buffer[6:], h.ANCount)
+	binary.BigEndian.PutUint16(buffer[8:], h.NSCount)
+	binary.BigEndian.PutUint16(buffer[10:], h.ARCount)
+
+	return buffer
+}
+
 func main() {
-	// You can use print statements as follows for debugging, they'll be visible when running tests.
-	fmt.Println("Logs from your program will appear here!")
-	
-	/*
-		net.ResolveUDPAddr is used to resolve a UDP address string (like "127.0.0.1:2053") into a net.UDPAddr struct. 
-		The "udp" network type is passed as the first argument to specify this should be a UDP address.
-		The address string "127.0.0.1:2053" specifies where we want to bind in this case localhost on port 2053.
-		net.ResolveUDPAddr returns a net.UDPAddr struct representing that address and an error.
-		If no error, we now have a valid UDP address struct that can be used to bind to the provided address.
-	*/
+	// UDP ADDRESS and PORT
 	udpAddr, err := net.ResolveUDPAddr("udp", "127.0.0.1:2053")
 	if err != nil {
 		fmt.Println("Failed to resolve UDP address:", err)
 		return
 	}
-	
-	/*
-		net.ListenUDP is used to create a UDP listener. 
-		The first argument "udp" specifies we want UDP, not TCP. 
-		The second argument udpAddr is a net.UDPAddr struct representing the address we want to bind the listener to.
-		The UDP listener returns a net.UDPConn which represents the listening UDP socket, and an error.
-		The error is checked - if not nil, it means binding failed and we print the error and return.
-		If no error, the bind was successful. We now have a valid UDP connection that can receive packets sent to that address.
-		The defer udpConn.Close() will make sure the connection is closed when the main function returns an error or when the program exits.
-	*/
+
 	udpConn, err := net.ListenUDP("udp", udpAddr)
 	if err != nil {
 		fmt.Println("Failed to bind to address:", err)
 		return
 	}
 	defer udpConn.Close()
-	
-	/*
-		Create a buffer (buf) to hold incoming UDP packet data.
-		A preallocated byte buffer for working with binary data.
-		Able to read from a UDP socket using udpConn.ReadFromUDP() and pass in buf to store the incoming packet data.
-	*/
-	buf := make([]byte, 512)
-	
-	/*
-		Enter an infinite loop to continuously listen for UDP packets.
-	*/
-	for {
 
-		/*
-			Call udpConn.ReadFromUDP() to read a UDP packet into the buffer. 
-			This returns the number of bytes read (size), 
-			the source address (source), 
-			and an error if any.
-		*/
+	buf := make([]byte, 512)
+
+	for {
 		size, source, err := udpConn.ReadFromUDP(buf)
 		if err != nil {
 			fmt.Println("Error receiving data:", err)
 			break
 		}
 	
-		/*
-			Extract the actual packet data from the buffer by slicing it to the size read. 
-			Convert this to a string to print it out.
-			Print out the size, source address and packet data received for debugging.
-		*/
 		receivedData := string(buf[:size])
 		fmt.Printf("Received %d bytes from %s: %s\n", size, source, receivedData)
 	
-		// Create an empty "dummy" response packet.
-		response := []byte{}
+		// DNS Header
+		header := DNSHeader{
+			ID: 1234,
+			QR: true,
+			OPCODE: 0,
+			AA: false,
+			TC: false,
+			RD: false,
+			RA: false,
+			Z: 0,
+			RCODE: 0,
+			QDCount: 0,
+			ANCount: 0,
+			NSCount: 0,
+			ARCount: 0,
+		}
+
+		response := header.encodeDNSHeader()
 	
-		/*
-			Call udpConn.WriteToUDP() to send the response packet back to the source address that sent the original packet.
-		*/
 		_, err = udpConn.WriteToUDP(response, source)
 		if err != nil {
 			fmt.Println("Failed to send response:", err)
