@@ -1,9 +1,10 @@
 package main
 
 import (
+	"encoding/binary"
 	"fmt"
 	"net"
-	"encoding/binary"
+	"strings"
 )
 
 type DNSHeader struct {
@@ -20,6 +21,42 @@ type DNSHeader struct {
 	ANCount uint16
 	NSCount uint16
 	ARCount uint16
+}
+
+type DNSQuestion struct {
+	Name  string
+	Type  int
+	Class int
+}
+
+// Packs the DNSQuestion into a byte array
+func (q *DNSQuestion) encodeDNSQuestion() []byte {
+	// Split the domain into labels
+	labels := strings.Split(q.Name, ".")
+
+	var domainSequence []byte
+
+	for _, label := range labels {
+		// byte length of the label
+		domainSequence = append(domainSequence, byte(len(label)))
+
+		// append the value or the label after its byte length
+		domainSequence = append(domainSequence, label...)
+	}
+
+	// append the null byte to terminate the domain
+	domainSequence = append(domainSequence, '\x00')
+
+	buffer := make([]byte, 4)
+
+	// Packs the question type and class into buffer
+	binary.BigEndian.PutUint16(buffer, uint16(q.Type))
+	binary.BigEndian.PutUint16(buffer, uint16(q.Class))
+
+	// append the domain sequence and the buffer
+	result := append(domainSequence, buffer...)
+
+	return result
 }
 
 // Packs the header into a uint16 values
@@ -88,13 +125,23 @@ func main() {
 			RA: false,
 			Z: 0,
 			RCODE: 0,
-			QDCount: 0,
+			QDCount: 1,
 			ANCount: 0,
 			NSCount: 0,
 			ARCount: 0,
 		}
 
-		response := header.encodeDNSHeader()
+		// DNS Question
+		question := DNSQuestion{
+			Name: "codecrafters.io",
+			Type: 1,
+			Class: 1,
+		}
+
+		response := append(
+			header.encodeDNSHeader(), 
+			question.encodeDNSQuestion()...
+		)
 	
 		_, err = udpConn.WriteToUDP(response, source)
 		if err != nil {
