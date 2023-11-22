@@ -133,6 +133,23 @@ func (h *DNSHeader) Encode() []byte {
 	return buffer
 }
 
+func decodeHeader(data []byte) DNSHeader {
+	response := DNSHeader{
+		ID: binary.BigEndian.Uint16(data[0:2]),
+	}
+
+	value := binary.BigEndian.Uint16(data[2:4])
+	response.QR = (value & (1 << 15))!= 0
+	response.OPCODE = uint8(value >> 11)
+	response.AA = (value & (1 << 10))!= 0
+	response.TC = (value & (1 << 9))!= 0
+	response.RD = (value & (1 << 8))!= 0
+	response.RA = (value & (1 << 7))!= 0
+	response.Z = uint8(value >> 4)
+
+	return response
+}
+
 func main() {
 	// UDP ADDRESS and PORT
 	udpAddr, err := net.ResolveUDPAddr("udp", "127.0.0.1:2053")
@@ -159,18 +176,21 @@ func main() {
 	
 		receivedData := string(buf[:size])
 		fmt.Printf("Received %d bytes from %s: %s\n", size, source, receivedData)
+
+		// Parse Received DNS Header
+		parsed := decodeHeader([]byte(receivedData))
 	
 		// DNS Header
 		header := DNSHeader{
-			ID: 1234,
+			ID: parsed.ID,
 			QR: true,
-			OPCODE: 0,
+			OPCODE: parsed.OPCODE,
 			AA: false,
 			TC: false,
-			RD: false,
+			RD: parsed.RD,
 			RA: false,
 			Z: 0,
-			RCODE: 0,
+			RCODE: 4,
 			QDCount: 1,
 			ANCount: 1,
 			NSCount: 0,
