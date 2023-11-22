@@ -29,8 +29,52 @@ type DNSQuestion struct {
 	Class int
 }
 
-// Packs the DNSQuestion into a byte array
-func (q *DNSQuestion) encodeDNSQuestion() []byte {
+type DNSAnswer struct {
+	Name   string
+	Type   int
+	Class  int
+	TTL    int
+	Length int
+	Data   string
+}
+
+// Encodes the DNSAnswer into a byte array
+func (a *DNSAnswer) Encode() []byte {
+	// Split the domain into labels
+	labels := strings.Split(a.Name, ".")
+
+	var domainSequence []byte
+
+	for _, label := range labels {
+		// byte length of the label
+		domainSequence = append(domainSequence, byte(len(label)))
+
+		// append the value or the label after its byte length
+		domainSequence = append(domainSequence, label...)
+	}
+
+	// append the null byte to terminate the domain
+	domainSequence = append(domainSequence, '\x00')
+
+	buffer := make([]byte, 10)
+	ip := net.ParseIP(a.Data).To4()
+	a.Length = len(ip)
+
+	binary.BigEndian.PutUint16(buffer[0:], uint16(a.Type))
+	binary.BigEndian.PutUint16(buffer[2:], uint16(a.Class))
+	binary.BigEndian.PutUint32(buffer[4:], uint32(a.TTL))
+	binary.BigEndian.PutUint16(buffer[8:], uint16(a.Length))
+
+	result := append(domainSequence, buffer...)
+	result = append(result, ip...)
+
+	fmt.Println("Answer:", result)
+
+	return result
+}
+
+// Encodes the DNSQuestion into a byte array
+func (q *DNSQuestion) Encode() []byte {
 	// Split the domain into labels
 	labels := strings.Split(q.Name, ".")
 
@@ -56,6 +100,7 @@ func (q *DNSQuestion) encodeDNSQuestion() []byte {
 	// append the domain sequence and the buffer
 	result := append(domainSequence, buffer...)
 
+	fmt.Println("Question:", result)
 	return result
 }
 
@@ -74,7 +119,7 @@ func (h *DNSHeader) packHeader() uint16 {
 }
 
 // Encodes the header into a byte array
-func (h *DNSHeader) encodeDNSHeader() []byte {
+func (h *DNSHeader) Encode() []byte {
 	buffer := make([]byte, 12)
 
 	binary.BigEndian.PutUint16(buffer[0:], h.ID)
@@ -84,6 +129,7 @@ func (h *DNSHeader) encodeDNSHeader() []byte {
 	binary.BigEndian.PutUint16(buffer[8:], h.NSCount)
 	binary.BigEndian.PutUint16(buffer[10:], h.ARCount)
 
+	fmt.Println("Header:", buffer)
 	return buffer
 }
 
@@ -126,7 +172,7 @@ func main() {
 			Z: 0,
 			RCODE: 0,
 			QDCount: 1,
-			ANCount: 0,
+			ANCount: 1,
 			NSCount: 0,
 			ARCount: 0,
 		}
@@ -138,10 +184,19 @@ func main() {
 			Class: 1,
 		}
 
-		response := append(
-			header.encodeDNSHeader(), 
-			question.encodeDNSQuestion()...
-		)
+		// DNS Answer
+		answer := DNSAnswer{
+			Name: "codecrafters.io",
+			Type: 1,
+			Class: 1,
+			TTL: 60,
+			Data: "8.8.8.8",
+		}
+
+		response := append(header.Encode(), question.Encode()...)
+		response = append(response, answer.Encode()...)
+
+		fmt.Println("Response:", response)
 	
 		_, err = udpConn.WriteToUDP(response, source)
 		if err != nil {
